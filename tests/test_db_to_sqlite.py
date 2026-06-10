@@ -105,6 +105,55 @@ def test_sql_query(connection, tmpdir, cli_runner):
     ] == list(db["out"].rows)
 
 
+@all_databases
+def test_views_with_all(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test.db")
+    result = cli_runner([connection, db_path, "--all", "--include-views"])
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert "products_view" in set(db.table_names())
+    assert [
+        {"id": 1, "name": "Bobcat Statue", "cat_id": 1},
+        {"id": 2, "name": "Yoga Scarf", "cat_id": 1},
+    ] == list(db["products_view"].rows)
+
+
+@all_databases
+def test_specific_views(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test.db")
+    result = cli_runner([connection, db_path, "--view", "products_view"])
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert {"products_view"} == set(db.table_names())
+    assert [
+        {"id": 1, "name": "Bobcat Statue", "cat_id": 1},
+        {"id": 2, "name": "Yoga Scarf", "cat_id": 1},
+    ] == list(db["products_view"].rows)
+
+
+@all_databases
+def test_view_table_name_conflict(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test.db")
+    result = cli_runner(
+        [connection, db_path, "--table", "products", "--view", "products", "-p"]
+    )
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    products_rows = list(db["products"].rows)
+    assert all("vendor_id" in row for row in products_rows)
+    assert "skipping (table with same name exists)" in result.output
+
+
+@all_databases
+def test_include_views_without_all(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test.db")
+    result = cli_runner(
+        [connection, db_path, "--table", "products", "--include-views"]
+    )
+    assert 0 != result.exit_code
+    assert "--include-views can only be used with --all" in result.output
+
+
 @pytest.mark.skipif(psycopg2 is None, reason="pip install psycopg2")
 def test_postgres_schema(tmpdir, cli_runner):
     db_path = str(tmpdir / "test_sql.db")

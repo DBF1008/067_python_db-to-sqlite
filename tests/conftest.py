@@ -71,6 +71,9 @@ INSERT INTO vendor_categories (cat_id, vendor_id)
 
 INSERT INTO user (id, name)
     VALUES (1, 'Lila');
+
+CREATE OR REPLACE VIEW products_view AS
+    SELECT id, name, cat_id FROM products;
 """
 
 POSTGRESQL_SQL = """
@@ -129,6 +132,9 @@ INSERT INTO vendor_categories (cat_id, vendor_id)
 
 INSERT INTO "user" (id, name)
     VALUES (1, 'Lila');
+
+CREATE OR REPLACE VIEW products_view AS
+    SELECT id, name, cat_id FROM products;
 
 CREATE SCHEMA other_schema;
 

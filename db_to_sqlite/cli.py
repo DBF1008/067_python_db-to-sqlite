@@ -11,7 +11,11 @@ from sqlite_utils import Database
 @click.argument("path", type=click.Path(exists=False), required=True)
 @click.option("--all", help="Detect and copy all tables", is_flag=True)
 @click.option("--table", help="Specific tables to copy", multiple=True)
+@click.option("--view", help="Specific views to copy", multiple=True)
 @click.option("--skip", help="When using --all skip these tables", multiple=True)
+@click.option(
+    "--include-views", help="Include views when using --all", is_flag=True
+)
 @click.option(
     "--redact",
     help="(table, column) pairs to redact with ***",
@@ -34,7 +38,9 @@ def cli(
     path,
     all,
     table,
+    view,
     skip,
+    include_views,
     redact,
     sql,
     output,
@@ -58,10 +64,12 @@ def cli(
 
     More: https://docs.sqlalchemy.org/en/13/core/engines.html#database-urls
     """
-    if not all and not table and not sql:
-        raise click.ClickException("--all OR --table OR --sql required")
+    if not all and not table and not view and not sql:
+        raise click.ClickException("--all OR --table OR --view OR --sql required")
     if skip and not all:
         raise click.ClickException("--skip can only be used with --all")
+    if include_views and not all:
+        raise click.ClickException("--include-views can only be used with --all")
     redact_columns = {}
     for table_name, column_name in redact:
         redact_columns.setdefault(table_name, set()).add(column_name)
@@ -164,6 +172,57 @@ def cli(
                     err=True,
                 )
             db.add_foreign_keys(foreign_keys_to_add_final)
+    # Figure out which views we are copying, if any
+    views = list(view)
+    if all and include_views:
+        views = list(set(views) | set(inspector.get_view_names()))
+    if views:
+        for i, view_name in enumerate(views):
+            if progress:
+                click.echo(
+                    "View {}/{}: {}".format(i + 1, len(views), view_name), err=True
+                )
+            if view_name in skip:
+                if progress:
+                    click.echo("  ... skipping", err=True)
+                continue
+            if db[view_name].exists():
+                if progress:
+                    click.echo(
+                        "  ... skipping (table with same name exists)", err=True
+                    )
+                continue
+            view_quoted = db_conn.dialect.identifier_preparer.quote_identifier(
+                view_name
+            )
+            count = None
+            if progress:
+                count = db_conn.execute(
+                    text("select count(*) from {}".format(view_quoted))
+                ).fetchone()[0]
+            results = db_conn.execute(
+                text("select * from {}".format(view_quoted))
+            )
+            rows = (dict(r._mapping) for r in results)
+            try:
+                first = next(rows)
+            except StopIteration:
+                if not db[view_name].exists():
+                    create_columns = {}
+                    for column in inspector.get_columns(view_name):
+                        try:
+                            column_type = column["type"].python_type
+                        except NotImplementedError:
+                            column_type = str
+                        create_columns[column["name"]] = column_type
+                    db[view_name].create(create_columns)
+            else:
+                rows = itertools.chain([first], rows)
+                if progress:
+                    with click.progressbar(rows, length=count) as bar:
+                        db[view_name].insert_all(bar, replace=True)
+                else:
+                    db[view_name].insert_all(rows, replace=True)
     if sql:
         if not output:
             raise click.ClickException("--sql must be accompanied by --output")

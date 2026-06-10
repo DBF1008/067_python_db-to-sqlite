@@ -31,6 +31,7 @@ def test_fixture_mysql():
             ("vendor_categories",),
             ("empty_table",),
             ("user",),
+            ("products_view",),
         } == set(cursor.fetchall())
     finally:
         db.close()
@@ -64,3 +65,12 @@ def test_fixture_postgresql():
         ("public", "empty_table"),
         ("other_schema", "other_schema_categories"),
     } == set(rows)
+    cursor.execute(
+        """
+        SELECT table_name FROM information_schema.views
+        WHERE table_catalog = 'test_db_to_sqlite'
+        AND table_schema = 'public'
+    """
+    )
+    view_rows = cursor.fetchall()
+    assert {("products_view",)} == set(view_rows)
