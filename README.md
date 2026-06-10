@@ -52,6 +52,8 @@ Options:
   --pk TEXT                     Optional column to use as a primary key
   --index-fks / --no-index-fks  Should foreign keys have indexes? Default on
   -p, --progress                Show progress bar
+  --summary                     Show a human-readable export summary on stderr
+  --summary-json                Output export summary as JSON to stdout
   --postgres-schema TEXT        PostgreSQL schema to use
   --help                        Show this message and exit.
 ```

@@ -1,4 +1,5 @@
 import itertools
+import json
 
 import click
 from sqlalchemy import create_engine, inspect, text
@@ -28,6 +29,8 @@ from sqlite_utils import Database
     help="Should foreign keys have indexes? Default on",
 )
 @click.option("-p", "--progress", help="Show progress bar", is_flag=True)
+@click.option("--summary", help="Show a human-readable export summary on stderr", is_flag=True)
+@click.option("--summary-json", help="Output export summary as JSON to stdout", is_flag=True)
 @click.option("--postgres-schema", help="PostgreSQL schema to use")
 def cli(
     connection,
@@ -41,6 +44,8 @@ def cli(
     pk,
     index_fks,
     progress,
+    summary,
+    summary_json,
     postgres_schema,
 ):
     """
@@ -65,6 +70,11 @@ def cli(
     redact_columns = {}
     for table_name, column_name in redact:
         redact_columns.setdefault(table_name, set()).add(column_name)
+    summary_data = {
+        "tables": [],
+        "foreign_keys": {"added": [], "skipped": []},
+        "sql": None,
+    }
     db = Database(path)
     if postgres_schema:
         conn_args = {"options": "-csearch_path={}".format(postgres_schema)}
@@ -86,6 +96,14 @@ def cli(
             if table in skip:
                 if progress:
                     click.echo("  ... skipping", err=True)
+                if summary or summary_json:
+                    summary_data["tables"].append({
+                        "name": table,
+                        "rows": 0,
+                        "skipped": True,
+                        "empty": False,
+                        "redacted_columns": [],
+                    })
                 continue
             pks = inspector.get_pk_constraint(table)["constrained_columns"]
             if len(pks) == 1:
@@ -126,29 +144,63 @@ def cli(
                             column_type = str
                         create_columns[column["name"]] = column_type
                     db[table].create(create_columns)
+                if summary or summary_json:
+                    summary_data["tables"].append({
+                        "name": table,
+                        "rows": 0,
+                        "skipped": False,
+                        "empty": True,
+                        "redacted_columns": sorted(redact_these),
+                    })
             else:
                 rows = itertools.chain([first], rows)
+                if summary or summary_json:
+                    rows = RowCounter(rows)
                 if progress:
                     with click.progressbar(rows, length=count) as bar:
                         db[table].insert_all(bar, pk=pks, replace=True)
                 else:
                     db[table].insert_all(rows, pk=pks, replace=True)
+                if summary or summary_json:
+                    summary_data["tables"].append({
+                        "name": table,
+                        "rows": rows.count,
+                        "skipped": False,
+                        "empty": False,
+                        "redacted_columns": sorted(redact_these),
+                    })
         foreign_keys_to_add_final = []
         for table, column, other_table, other_column in foreign_keys_to_add:
-            # Make sure both tables exist and are not skipped - they may not
-            # exist if they were empty and hence .insert_all() didn't have a
-            # reason to create them.
-            if (
-                db[table].exists()
-                and table not in skip
-                and db[other_table].exists()
-                and other_table not in skip
-                # Also skip if this column is redacted
-                and ((table, column) not in redact)
-            ):
+            reason = None
+            if not db[table].exists():
+                reason = "source_table_missing"
+            elif table in skip:
+                reason = "source_table_skipped"
+            elif not db[other_table].exists():
+                reason = "referred_table_missing"
+            elif other_table in skip:
+                reason = "referred_table_skipped"
+            elif (table, column) in redact:
+                reason = "column_redacted"
+            if reason is None:
                 foreign_keys_to_add_final.append(
                     (table, column, other_table, other_column)
                 )
+                if summary or summary_json:
+                    summary_data["foreign_keys"]["added"].append({
+                        "table": table,
+                        "column": column,
+                        "other_table": other_table,
+                        "other_column": other_column,
+                    })
+            elif summary or summary_json:
+                summary_data["foreign_keys"]["skipped"].append({
+                    "table": table,
+                    "column": column,
+                    "other_table": other_table,
+                    "other_column": other_column,
+                    "reason": reason,
+                })
         if foreign_keys_to_add_final:
             # Add using .add_foreign_keys() to avoid running multiple VACUUMs
             if progress:
@@ -169,9 +221,21 @@ def cli(
             raise click.ClickException("--sql must be accompanied by --output")
         results = db_conn.execute(text(sql))
         rows = (dict(r._mapping) for r in results)
+        if summary or summary_json:
+            rows = RowCounter(rows)
         db[output].insert_all(rows, pk=pk)
+        if summary or summary_json:
+            summary_data["sql"] = {
+                "query": sql,
+                "output_table": output,
+                "rows": rows.count,
+            }
     if index_fks:
         db.index_foreign_keys()
+    if summary:
+        click.echo(_format_text_summary(summary_data), err=True)
+    if summary_json:
+        click.echo(json.dumps(summary_data, indent=2))
 
 
 def detect_primary_key(db_conn, table):
@@ -188,6 +252,61 @@ def redacted_dict(row, redact):
         if key in d:
             d[key] = "***"
     return d
+
+
+class RowCounter:
+    def __init__(self, iterator):
+        self.count = 0
+        self._iterator = iterator
+
+    def __iter__(self):
+        for row in self._iterator:
+            self.count += 1
+            yield row
+
+
+def _format_text_summary(data):
+    lines = ["--- Export Summary ---"]
+    tables = data.get("tables", [])
+    if tables:
+        copied = [t for t in tables if not t["skipped"]]
+        skipped = [t for t in tables if t["skipped"]]
+        lines.append("Tables copied: {}".format(len(copied)))
+        for t in copied:
+            suffix = ""
+            if t["empty"]:
+                suffix = " (empty)"
+            elif t["redacted_columns"]:
+                suffix = " (redacted: {})".format(", ".join(t["redacted_columns"]))
+            row_word = "row" if t["rows"] == 1 else "rows"
+            lines.append("  {}: {} {}{}".format(t["name"], t["rows"], row_word, suffix))
+        if skipped:
+            lines.append("Tables skipped: {}".format(len(skipped)))
+            for t in skipped:
+                lines.append("  {}".format(t["name"]))
+    fks = data.get("foreign_keys", {})
+    added = fks.get("added", [])
+    skipped_fks = fks.get("skipped", [])
+    if added:
+        lines.append("Foreign keys added: {}".format(len(added)))
+        for fk in added:
+            lines.append("  {}.{} => {}.{}".format(
+                fk["table"], fk["column"], fk["other_table"], fk["other_column"]
+            ))
+    if skipped_fks:
+        lines.append("Foreign keys skipped: {}".format(len(skipped_fks)))
+        for fk in skipped_fks:
+            lines.append("  {}.{} => {}.{} ({})".format(
+                fk["table"], fk["column"], fk["other_table"], fk["other_column"],
+                fk["reason"],
+            ))
+    sql = data.get("sql")
+    if sql:
+        lines.append("SQL query: {}".format(sql["query"]))
+        lines.append("Output table: {}".format(sql["output_table"]))
+        row_word = "row" if sql["rows"] == 1 else "rows"
+        lines.append("Rows: {} {}".format(sql["rows"], row_word))
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
