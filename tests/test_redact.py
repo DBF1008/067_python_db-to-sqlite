@@ -35,3 +35,70 @@ def test_redact(connection, tmpdir, cli_runner):
             other_column="id",
         )
     ] == sorted(db["products"].foreign_keys)
+
+
+@all_databases
+def test_redact_sql(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_redact_sql.db")
+    result = cli_runner(
+        [
+            connection,
+            db_path,
+            "--sql",
+            "select name, cat_id from products",
+            "--output",
+            "out",
+            "--redact",
+            "out",
+            "name",
+        ]
+    )
+    assert 0 == result.exit_code, (result.output, result.exception)
+    db = sqlite_utils.Database(db_path)
+    assert [
+        {"name": "***", "cat_id": 1},
+        {"name": "***", "cat_id": 1},
+    ] == list(db["out"].rows)
+
+
+@all_databases
+def test_redact_sql_alias(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_redact_sql_alias.db")
+    result = cli_runner(
+        [
+            connection,
+            db_path,
+            "--sql",
+            "select name as product_name, cat_id from products",
+            "--output",
+            "out",
+            "--redact",
+            "out",
+            "product_name",
+        ]
+    )
+    assert 0 == result.exit_code, (result.output, result.exception)
+    db = sqlite_utils.Database(db_path)
+    assert [
+        {"product_name": "***", "cat_id": 1},
+        {"product_name": "***", "cat_id": 1},
+    ] == list(db["out"].rows)
+
+
+@all_databases
+def test_redact_sql_empty(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_redact_sql_empty.db")
+    result = cli_runner(
+        [
+            connection,
+            db_path,
+            "--sql",
+            "select name from products where id = 999",
+            "--output",
+            "out",
+            "--redact",
+            "out",
+            "name",
+        ]
+    )
+    assert 0 == result.exit_code, (result.output, result.exception)

@@ -168,7 +168,8 @@ def cli(
         if not output:
             raise click.ClickException("--sql must be accompanied by --output")
         results = db_conn.execute(text(sql))
-        rows = (dict(r._mapping) for r in results)
+        redact_these = redact_columns.get(output) or set()
+        rows = (redacted_dict(r, redact_these) for r in results)
         db[output].insert_all(rows, pk=pk)
     if index_fks:
         db.index_foreign_keys()
