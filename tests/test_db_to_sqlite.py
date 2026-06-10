@@ -17,6 +17,9 @@ def test_db_to_sqlite(connection, tmpdir, cli_runner):
         "vendor_categories",
         "user",
         "empty_table",
+        "compound_fk_parent",
+        "compound_fk_child",
+        "compound_fk_empty",
     } == set(db.table_names())
     assert [
         {"id": 1, "name": "Bobcat Statue", "cat_id": 1, "vendor_id": 1, "price": None},
@@ -120,3 +123,59 @@ def test_postgres_schema(tmpdir, cli_runner):
         "   [name] TEXT\n"
         ")"
     )
+
+
+@all_databases
+def test_composite_foreign_keys(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_composite_fk.db")
+    result = cli_runner([connection, db_path, "--all"])
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert sorted(db["compound_fk_child"].foreign_keys) == [
+        ForeignKey(
+            table="compound_fk_child",
+            column="a",
+            other_table="compound_fk_parent",
+            other_column="x",
+        ),
+        ForeignKey(
+            table="compound_fk_child",
+            column="b",
+            other_table="compound_fk_parent",
+            other_column="y",
+        ),
+    ]
+    assert [{"id": 1, "a": 1, "b": 2}] == list(db["compound_fk_child"].rows)
+
+
+@all_databases
+def test_composite_foreign_keys_empty_table(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_composite_fk_empty.db")
+    result = cli_runner([connection, db_path, "--all"])
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert sorted(db["compound_fk_empty"].foreign_keys) == [
+        ForeignKey(
+            table="compound_fk_empty",
+            column="a",
+            other_table="compound_fk_parent",
+            other_column="x",
+        ),
+        ForeignKey(
+            table="compound_fk_empty",
+            column="b",
+            other_table="compound_fk_parent",
+            other_column="y",
+        ),
+    ]
+    assert [] == list(db["compound_fk_empty"].rows)
+
+
+@all_databases
+def test_composite_foreign_keys_with_skip(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_composite_fk_skip.db")
+    result = cli_runner([connection, db_path, "--all", "--skip", "compound_fk_parent"])
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert [] == sorted(db["compound_fk_child"].foreign_keys)
+    assert [] == sorted(db["compound_fk_empty"].foreign_keys)

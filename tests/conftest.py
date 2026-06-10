@@ -55,6 +55,29 @@ CREATE TABLE IF NOT EXISTS empty_table (
     ip varchar(15)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS compound_fk_parent (
+    x int not null,
+    y int not null,
+    PRIMARY KEY (x, y)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS compound_fk_child (
+    id int not null auto_increment primary key,
+    a int not null,
+    b int not null,
+    FOREIGN KEY (a, b) REFERENCES compound_fk_parent(x, y)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS compound_fk_empty (
+    id int not null auto_increment primary key,
+    a int not null,
+    b int not null,
+    FOREIGN KEY (a, b) REFERENCES compound_fk_parent(x, y)
+) ENGINE=InnoDB;
+
+DELETE FROM compound_fk_child;
+DELETE FROM compound_fk_empty;
+DELETE FROM compound_fk_parent;
 DELETE FROM products;
 DELETE FROM categories;
 DELETE FROM user;
@@ -71,6 +94,9 @@ INSERT INTO vendor_categories (cat_id, vendor_id)
 
 INSERT INTO user (id, name)
     VALUES (1, 'Lila');
+
+INSERT INTO compound_fk_parent (x, y) VALUES (1, 2);
+INSERT INTO compound_fk_child (id, a, b) VALUES (1, 1, 2);
 """
 
 POSTGRESQL_SQL = """
@@ -111,6 +137,29 @@ CREATE TABLE IF NOT EXISTS empty_table (
     ip inet
 );
 
+CREATE TABLE IF NOT EXISTS compound_fk_parent (
+    x int not null,
+    y int not null,
+    PRIMARY KEY (x, y)
+);
+
+CREATE TABLE IF NOT EXISTS compound_fk_child (
+    id int not null primary key,
+    a int not null,
+    b int not null,
+    FOREIGN KEY (a, b) REFERENCES compound_fk_parent(x, y)
+);
+
+CREATE TABLE IF NOT EXISTS compound_fk_empty (
+    id int not null primary key,
+    a int not null,
+    b int not null,
+    FOREIGN KEY (a, b) REFERENCES compound_fk_parent(x, y)
+);
+
+DELETE FROM compound_fk_child;
+DELETE FROM compound_fk_empty;
+DELETE FROM compound_fk_parent;
 DELETE FROM products;
 DELETE FROM categories;
 DELETE FROM vendors;
@@ -129,6 +178,9 @@ INSERT INTO vendor_categories (cat_id, vendor_id)
 
 INSERT INTO "user" (id, name)
     VALUES (1, 'Lila');
+
+INSERT INTO compound_fk_parent (x, y) VALUES (1, 2);
+INSERT INTO compound_fk_child (id, a, b) VALUES (1, 1, 2);
 
 CREATE SCHEMA other_schema;
 
