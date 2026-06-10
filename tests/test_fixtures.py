@@ -30,6 +30,7 @@ def test_fixture_mysql():
             ("products",),
             ("vendor_categories",),
             ("empty_table",),
+            ("empty_compound_pk",),
             ("user",),
         } == set(cursor.fetchall())
     finally:
@@ -62,5 +63,6 @@ def test_fixture_postgresql():
         ("public", "vendors"),
         ("public", "user"),
         ("public", "empty_table"),
+        ("public", "empty_compound_pk"),
         ("other_schema", "other_schema_categories"),
     } == set(rows)

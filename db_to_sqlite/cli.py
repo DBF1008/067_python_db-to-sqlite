@@ -119,13 +119,16 @@ def cli(
                 # This is an empty table - create an empty copy
                 if not db[table].exists():
                     create_columns = {}
+                    not_null = set()
                     for column in inspector.get_columns(table):
                         try:
                             column_type = column["type"].python_type
                         except NotImplementedError:
                             column_type = str
                         create_columns[column["name"]] = column_type
-                    db[table].create(create_columns)
+                        if not column.get("nullable", True):
+                            not_null.add(column["name"])
+                    db[table].create(create_columns, pk=pks, not_null=not_null)
             else:
                 rows = itertools.chain([first], rows)
                 if progress:
@@ -168,8 +171,16 @@ def cli(
         if not output:
             raise click.ClickException("--sql must be accompanied by --output")
         results = db_conn.execute(text(sql))
+        column_names = results.keys()
         rows = (dict(r._mapping) for r in results)
-        db[output].insert_all(rows, pk=pk)
+        try:
+            first = next(rows)
+        except StopIteration:
+            if not db[output].exists():
+                db[output].create({col: str for col in column_names}, pk=pk)
+        else:
+            rows = itertools.chain([first], rows)
+            db[output].insert_all(rows, pk=pk)
     if index_fks:
         db.index_foreign_keys()
 

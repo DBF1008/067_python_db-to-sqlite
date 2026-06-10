@@ -83,6 +83,12 @@ If you want to save the results of a custom SQL query, do this:
 
 The `--output` option specifies the table that should contain the results of the query.
 
+## Empty tables and queries
+
+When copying tables that contain no rows, `db-to-sqlite` will still create the table in the SQLite database with the correct column types, primary key constraints (including compound primary keys), and `NOT NULL` constraints preserved from the source database.
+
+Similarly, if a `--sql` query returns no rows, the output table will still be created with the correct column names and the specified `--pk` (if any).
+
 ## Using db-to-sqlite with PostgreSQL schemas
 
 If the tables you want to copy from your PostgreSQL database aren't in the default schema, you can specify an alternate one with the `--postgres-schema` option:

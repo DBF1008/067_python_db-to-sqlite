@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS empty_table (
     ip varchar(15)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS empty_compound_pk (
+    alpha int not null,
+    bravo int not null,
+    PRIMARY KEY (alpha, bravo)
+) ENGINE=InnoDB;
+
 DELETE FROM products;
 DELETE FROM categories;
 DELETE FROM user;
@@ -109,6 +115,12 @@ CREATE TABLE IF NOT EXISTS empty_table (
     id int not null primary key,
     name varchar(32) not null,
     ip inet
+);
+
+CREATE TABLE IF NOT EXISTS empty_compound_pk (
+    alpha int not null,
+    bravo int not null,
+    PRIMARY KEY (alpha, bravo)
 );
 
 DELETE FROM products;

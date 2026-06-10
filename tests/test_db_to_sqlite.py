@@ -17,6 +17,7 @@ def test_db_to_sqlite(connection, tmpdir, cli_runner):
         "vendor_categories",
         "user",
         "empty_table",
+        "empty_compound_pk",
     } == set(db.table_names())
     assert [
         {"id": 1, "name": "Bobcat Statue", "cat_id": 1, "vendor_id": 1, "price": None},
@@ -27,7 +28,12 @@ def test_db_to_sqlite(connection, tmpdir, cli_runner):
     assert [{"id": 1, "name": "Lila"}] == list(db["user"].rows)
     assert (
         db["empty_table"].schema
-        == "CREATE TABLE [empty_table] (\n   [id] INTEGER,\n   [name] TEXT,\n   [ip] TEXT\n)"
+        == "CREATE TABLE [empty_table] (\n   [id] INTEGER PRIMARY KEY NOT NULL,\n   [name] TEXT NOT NULL,\n   [ip] TEXT\n)"
+    )
+    assert db["empty_compound_pk"].pks == ["alpha", "bravo"]
+    assert (
+        db["empty_compound_pk"].schema
+        == "CREATE TABLE [empty_compound_pk] (\n   [alpha] INTEGER NOT NULL,\n   [bravo] INTEGER NOT NULL,\n   PRIMARY KEY ([alpha], [bravo])\n)"
     )
     # Check foreign keys
     assert [
@@ -120,3 +126,44 @@ def test_postgres_schema(tmpdir, cli_runner):
         "   [name] TEXT\n"
         ")"
     )
+
+
+@all_databases
+def test_empty_sql_query(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_empty_sql.db")
+    result = cli_runner(
+        [
+            connection,
+            db_path,
+            "--sql",
+            "select name, cat_id from products where 1=0",
+            "--output",
+            "empty_query",
+        ]
+    )
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert {"empty_query"} == set(db.table_names())
+    assert [] == list(db["empty_query"].rows)
+    assert ["name", "cat_id"] == [col.name for col in db["empty_query"].columns]
+
+
+@all_databases
+def test_empty_sql_query_with_pk(connection, tmpdir, cli_runner):
+    db_path = str(tmpdir / "test_empty_sql_pk.db")
+    result = cli_runner(
+        [
+            connection,
+            db_path,
+            "--sql",
+            "select id, name from products where 1=0",
+            "--output",
+            "empty_query_pk",
+            "--pk",
+            "id",
+        ]
+    )
+    assert 0 == result.exit_code, result.output
+    db = sqlite_utils.Database(db_path)
+    assert {"empty_query_pk"} == set(db.table_names())
+    assert db["empty_query_pk"].pks == ["id"]
